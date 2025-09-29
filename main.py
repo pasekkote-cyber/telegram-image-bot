@@ -10,61 +10,70 @@ from PIL import Image
 # === Настройки ===
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 HF_API_TOKEN = os.getenv("HF_API_TOKEN")
-RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")  # Например: https://telegram-image-bot-fg24.onrender.com
+RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")
 
 if not TELEGRAM_TOKEN or not HF_API_TOKEN or not RENDER_EXTERNAL_URL:
     raise ValueError("❌ Не заданы TELEGRAM_TOKEN, HF_API_TOKEN или RENDER_EXTERNAL_URL")
 
-# === Инициализация Application (без запуска) ===
+# === Инициализация Application ===
 application = Application.builder().token(TELEGRAM_TOKEN).build()
 
-# === Обработчик сообщений ===
+# === Обработчик генерации изображений ===
 async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
     prompt = update.message.text
-    await update.message.reply_text("🎨 Генерирую... (20–60 сек)")
     try:
+        await update.message.reply_text("🎨 Генерирую изображение... (20–60 сек)")
+        
         # Запрос к Hugging Face
         response = requests.post(
             "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2-1",
             headers={"Authorization": f"Bearer {HF_API_TOKEN}"},
-            json={"inputs": prompt}
+            json={"inputs": prompt},
+            timeout=60  # Защита от зависаний
         )
         
-        # Логируем статус ответа
-        print(f"HF Response Status: {response.status_code}")
-        print(f"HF Response Text: {response.text[:500]}")  # первые 500 символов
-        
+        # Логируем для отладки (видно в логах Render)
+        print(f"[HF] Status: {response.status_code}")
         if response.status_code != 200:
-            raise Exception(f"HF error {response.status_code}: {response.text}")
-        
-        # Отправка изображения
+            error_detail = response.text[:300]
+            print(f"[HF] Error: {error_detail}")
+            raise Exception(f"HF error {response.status_code}")
+
+        # Обработка изображения
         image = Image.open(BytesIO(response.content))
         bio = BytesIO()
         bio.name = 'image.png'
         image.save(bio, 'PNG')
         bio.seek(0)
         await update.message.reply_photo(photo=bio)
-        
+
     except Exception as e:
-        # Отправляем ошибку пользователю
         error_msg = f"❌ Ошибка: {str(e)[:150]}"
-        await update.message.reply_text(error_msg)
-        # И логируем в консоль
-        print(f"❌ ERROR in generate_image: {e}")
+        print(f"[BOT ERROR] {error_msg}")
+        try:
+            await update.message.reply_text(error_msg)
+        except:
+            pass  # Если уже не можем ответить — молчим
+
+# Добавляем обработчик
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, generate_image))
+
 # === Flask-приложение ===
 app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "✅ Бот запущен и готов к работе!"
+    return "✅ Telegram Image Bot is running!"
 
 @app.route("/setwebhook")
 def set_webhook():
     webhook_url = f"{RENDER_EXTERNAL_URL}/webhook"
     bot = Bot(token=TELEGRAM_TOKEN)
-    success = bot.set_webhook(url=webhook_url)
+    # Устанавливаем webhook синхронно (без async)
+    import asyncio
+    success = asyncio.run(bot.set_webhook(url=webhook_url))
     return f"✅ Webhook установлен: {success}<br>URL: {webhook_url}"
 
 @app.route("/webhook", methods=["POST"])
@@ -72,9 +81,10 @@ def webhook():
     json_data = request.get_json()
     if json_data:
         update = Update.de_json(json_data, application.bot)
+        # Обрабатываем обновление асинхронно
         application.update_queue.put(update)
     return jsonify({"ok": True})
 
-# === Запуск Flask ===
+# === Запуск ===
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
