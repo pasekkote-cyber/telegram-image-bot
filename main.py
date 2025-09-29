@@ -76,14 +76,24 @@ def set_webhook():
     success = asyncio.run(bot.set_webhook(url=webhook_url))
     return f"✅ Webhook установлен: {success}<br>URL: {webhook_url}"
 
+import threading
+
+# Запуск обработки обновлений в фоне
+def start_application():
+    application.run_polling()
+
 @app.route("/webhook", methods=["POST"])
 def webhook():
     json_data = request.get_json()
-    if json_data:
+    if json_
         update = Update.de_json(json_data, application.bot)
-        # Обрабатываем обновление асинхронно
         application.update_queue.put(update)
     return jsonify({"ok": True})
+
+# Запускаем обработку в фоновом потоке
+thread = threading.Thread(target=start_application)
+thread.daemon = True
+thread.start()
 
 # === Запуск ===
 if __name__ == "__main__":
