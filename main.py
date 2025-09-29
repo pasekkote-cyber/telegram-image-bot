@@ -24,40 +24,36 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
     prompt = update.message.text
+    await update.message.reply_text("🎨 Генерирую... (20–60 сек)")
     try:
-        await update.message.reply_text("🎨 Генерирую изображение... (20–60 сек)")
-        
         # Запрос к Hugging Face
         response = requests.post(
             "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2-1",
             headers={"Authorization": f"Bearer {HF_API_TOKEN}"},
-            json={"inputs": prompt},
-            timeout=60
+            json={"inputs": prompt}
         )
         
-        # Логируем для отладки
-        print(f"[HF] Status: {response.status_code}")
+        # Логируем статус ответа
+        print(f"HF Response Status: {response.status_code}")
+        print(f"HF Response Text: {response.text[:500]}")  # первые 500 символов
+        
         if response.status_code != 200:
-            error_detail = response.text[:300]
-            print(f"[HF] Error: {error_detail}")
-            raise Exception(f"HF error {response.status_code}")
-
-        # Обработка изображения
+            raise Exception(f"HF error {response.status_code}: {response.text}")
+        
+        # Отправка изображения
         image = Image.open(BytesIO(response.content))
         bio = BytesIO()
         bio.name = 'image.png'
         image.save(bio, 'PNG')
         bio.seek(0)
         await update.message.reply_photo(photo=bio)
-
+        
     except Exception as e:
+        # Отправляем ошибку пользователю
         error_msg = f"❌ Ошибка: {str(e)[:150]}"
-        print(f"[BOT ERROR] {error_msg}")
-        try:
-            await update.message.reply_text(error_msg)
-        except:
-            pass
-
+        await update.message.reply_text(error_msg)
+        # И логируем в консоль
+        print(f"❌ ERROR in generate_image: {e}")
 # Добавляем обработчик
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, generate_image))
 
