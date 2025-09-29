@@ -83,7 +83,7 @@ def start_app():
 @app.route("/webhook", methods=["POST"])
 def webhook():
     json_data = request.get_json()
-    if json_
+    if json_data:  # <-- ИСПРАВЛЕНО: было "if json_" — теперь "if json_data"
         update = Update.de_json(json_data, application.bot)
         application.update_queue.put(update)
     return jsonify({"ok": True})
