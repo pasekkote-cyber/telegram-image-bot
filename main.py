@@ -6,6 +6,7 @@ from telegram.ext import Application, ContextTypes, MessageHandler, filters
 import requests
 from io import BytesIO
 from PIL import Image
+import threading
 
 # === Настройки ===
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -31,10 +32,10 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2-1",
             headers={"Authorization": f"Bearer {HF_API_TOKEN}"},
             json={"inputs": prompt},
-            timeout=60  # Защита от зависаний
+            timeout=60
         )
         
-        # Логируем для отладки (видно в логах Render)
+        # Логируем для отладки
         print(f"[HF] Status: {response.status_code}")
         if response.status_code != 200:
             error_detail = response.text[:300]
@@ -55,7 +56,7 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await update.message.reply_text(error_msg)
         except:
-            pass  # Если уже не можем ответить — молчим
+            pass
 
 # Добавляем обработчик
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, generate_image))
@@ -71,15 +72,12 @@ def home():
 def set_webhook():
     webhook_url = f"{RENDER_EXTERNAL_URL}/webhook"
     bot = Bot(token=TELEGRAM_TOKEN)
-    # Устанавливаем webhook синхронно (без async)
     import asyncio
     success = asyncio.run(bot.set_webhook(url=webhook_url))
     return f"✅ Webhook установлен: {success}<br>URL: {webhook_url}"
 
-import threading
-
 # Запуск обработки обновлений в фоне
-def start_application():
+def start_app():
     application.run_polling()
 
 @app.route("/webhook", methods=["POST"])
@@ -90,11 +88,11 @@ def webhook():
         application.update_queue.put(update)
     return jsonify({"ok": True})
 
-# Запускаем обработку в фоновом потоке
-thread = threading.Thread(target=start_application)
+# Запускаем фоновый поток
+thread = threading.Thread(target=start_app)
 thread.daemon = True
 thread.start()
 
-# === Запуск ===
+# === Запуск Flask ===
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
