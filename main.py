@@ -1,94 +1,61 @@
 # main.py
-from flask import Flask, request, jsonify
 import os
-from telegram import Bot, Update
+from telegram import Update
 from telegram.ext import Application, ContextTypes, MessageHandler, filters
 import requests
 from io import BytesIO
 from PIL import Image
-import threading
 
-# === Настройки ===
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 HF_API_TOKEN = os.getenv("HF_API_TOKEN")
-RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")
+PORT = int(os.environ.get("PORT", 8443))  # Render использует PORT
 
-if not TELEGRAM_TOKEN or not HF_API_TOKEN or not RENDER_EXTERNAL_URL:
-    raise ValueError("❌ Не заданы TELEGRAM_TOKEN, HF_API_TOKEN или RENDER_EXTERNAL_URL")
+if not TELEGRAM_TOKEN or not HF_API_TOKEN:
+    raise ValueError("❌ Не заданы TELEGRAM_TOKEN или HF_API_TOKEN")
 
-# === Инициализация Application ===
-application = Application.builder().token(TELEGRAM_TOKEN).build()
-
-# === Обработчик генерации изображений ===
 async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
     prompt = update.message.text
-    await update.message.reply_text("🎨 Генерирую... (20–60 сек)")
     try:
-        # Запрос к Hugging Face
+        await update.message.reply_text("🎨 Генерирую... (20–60 сек)")
         response = requests.post(
             "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2-1",
             headers={"Authorization": f"Bearer {HF_API_TOKEN}"},
-            json={"inputs": prompt}
+            json={"inputs": prompt},
+            timeout=60
         )
-        
-        # Логируем статус ответа
-        print(f"HF Response Status: {response.status_code}")
-        print(f"HF Response Text: {response.text[:500]}")  # первые 500 символов
-        
+        print(f"[HF] Status: {response.status_code}")
         if response.status_code != 200:
-            raise Exception(f"HF error {response.status_code}: {response.text}")
+            raise Exception(f"HF error {response.status_code}")
         
-        # Отправка изображения
         image = Image.open(BytesIO(response.content))
         bio = BytesIO()
         bio.name = 'image.png'
         image.save(bio, 'PNG')
         bio.seek(0)
         await update.message.reply_photo(photo=bio)
-        
     except Exception as e:
-        # Отправляем ошибку пользователю
-        error_msg = f"❌ Ошибка: {str(e)[:150]}"
-        await update.message.reply_text(error_msg)
-        # И логируем в консоль
-        print(f"❌ ERROR in generate_image: {e}")
-# Добавляем обработчик
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, generate_image))
+        print(f"[ERROR] {e}")
+        await update.message.reply_text(f"❌ Ошибка: {str(e)[:150]}")
 
-# === Flask-приложение ===
-app = Flask(__name__)
+# Создаём Application
+app = Application.builder().token(TELEGRAM_TOKEN).build()
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, generate_image))
 
-@app.route("/")
-def home():
-    return "✅ Telegram Image Bot is running!"
-
-@app.route("/setwebhook")
-def set_webhook():
-    webhook_url = f"{RENDER_EXTERNAL_URL}/webhook"
-    bot = Bot(token=TELEGRAM_TOKEN)
-    import asyncio
-    success = asyncio.run(bot.set_webhook(url=webhook_url))
-    return f"✅ Webhook установлен: {success}<br>URL: {webhook_url}"
-
-# Запуск обработки обновлений в фоне
-def start_app():
-    application.run_polling()
-
-@app.route("/webhook", methods=["POST"])
-def webhook():
-    json_data = request.get_json()
-    if json_data:  # <-- ИСПРАВЛЕНО: было "if json_" — теперь "if json_data"
-        update = Update.de_json(json_data, application.bot)
-        application.update_queue.put(update)
-    return jsonify({"ok": True})
-
-# Запускаем фоновый поток
-thread = threading.Thread(target=start_app)
-thread.daemon = True
-thread.start()
-
-# === Запуск Flask ===
+# Запуск
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    # Получаем URL для webhook из Render
+    RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")
+    if RENDER_EXTERNAL_URL:
+        webhook_url = f"{RENDER_EXTERNAL_URL}/webhook"
+        print(f"Setting webhook to: {webhook_url}")
+        app.run_webhook(
+            listen="0.0.0.0",
+            port=PORT,
+            webhook_url=webhook_url,
+            secret_token=None  # можно добавить для безопасности
+        )
+    else:
+        # Fallback на polling (не для Render)
+        app.run_polling()
