@@ -47,7 +47,7 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, generate_image))
 
-# Запуск бота при первом запросе (или сразу)
+# Запуск бота при первом запросе
 import threading
 
 bot_started = False
@@ -72,4 +72,4 @@ def home():
     return "Telegram + Stable Diffusion (Hugging Face) Bot is running!"
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 500
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
