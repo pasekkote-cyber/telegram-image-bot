@@ -36,7 +36,6 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         image_bytes = query_hf({"inputs": prompt})
-        # Конвертируем байты в изображение для Telegram
         image = Image.open(BytesIO(image_bytes))
         bio = BytesIO()
         bio.name = 'image.png'
@@ -48,10 +47,12 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, generate_image))
 
-# Запуск polling в фоне
-@app.before_first_request
-def setup_bot():
-    import threading
+# Запуск бота при первом запросе (или сразу)
+import threading
+
+bot_started = False
+
+def start_bot():
     def run_bot():
         asyncio.set_event_loop(asyncio.new_event_loop())
         bot_app.run_polling()
@@ -59,9 +60,16 @@ def setup_bot():
     thread.daemon = True
     thread.start()
 
+@app.before_request
+def ensure_bot_started():
+    global bot_started
+    if not bot_started:
+        start_bot()
+        bot_started = True
+
 @app.route("/")
 def home():
     return "Telegram + Stable Diffusion (Hugging Face) Bot is running!"
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 500
