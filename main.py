@@ -10,8 +10,8 @@ from io import BytesIO
 from PIL import Image
 
 # Настройки
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-HF_API_TOKEN = os.getenv("HF_API_TOKEN")
+TELEGRAM_TOKEN = os.getenv("7677557713:AAHVqE36qzbqtjlGOUc9zy2BaKWq6Ee5k6Y")
+HF_API_TOKEN = os.getenv("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")
 
 if not TELEGRAM_TOKEN or not HF_API_TOKEN:
     raise ValueError("Не заданы TELEGRAM_TOKEN или HF_API_TOKEN")
